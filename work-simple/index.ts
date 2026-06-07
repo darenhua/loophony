@@ -9,6 +9,10 @@ const server = Bun.serve({
       const body = figlet.textSync('Bun!');
       return new Response(body);
     }
+  },
+  development: {
+    hmr: true,
+    console: true,
   }
 });
 

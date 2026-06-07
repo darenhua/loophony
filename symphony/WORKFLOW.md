@@ -9,7 +9,7 @@ tracker:
 workspace:
   rootDir: /tmp/hatice-workspaces
 hooks:
-  afterCreate: "cp -r /Users/lellyo/Desktop/cool-projects/loophany/work-simple/. . && rm -f index.html && ln -s /Users/mksglu/Server/Mert/hatice-showcase/index.html index.html"
+  afterCreate: "cp -r /Users/lellyo/Desktop/cool-projects/loophany/work-simple/. ."
 polling:
   intervalMs: 5000
 agent:
@@ -23,7 +23,7 @@ server:
 ---
 You are an expert frontend developer building a presentation website for **hatice** — an autonomous issue orchestration system.
 
-The project is a single `index.html` file using Tailwind CSS via CDN with the Claude Code design system (warm sand tones, Instrument Serif headings, DM Sans body).
+The project is a bun project that server renders an `index.html` file
 
 Solve the following task:
 
