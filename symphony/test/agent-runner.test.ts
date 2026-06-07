@@ -204,6 +204,33 @@ describe('AgentRunner', () => {
     }
   });
 
+  it('run: surfaces recent stream messages in error when stream throws mid-iteration', async () => {
+    // Mirrors the real failure: the CLI exits non-zero mid-stream after emitting
+    // messages on stdout but nothing on stderr, so the bare exit code is useless
+    // without the stdout context that preceded it.
+    async function* failingGen(): AsyncGenerator<any> {
+      yield { type: 'system', subtype: 'init', session_id: 's1' };
+      yield { type: 'assistant' };
+      yield { type: 'rate_limit_event' };
+      yield { type: 'result', subtype: 'error_during_execution', is_error: true, result: 'Usage limit reached' };
+      throw new Error('Claude Code process exited with code 1');
+    }
+    mockQuery.mockReturnValue(failingGen());
+
+    const { AgentRunner } = await import('../src/agent-runner.js');
+    const runner = new AgentRunner(makeOptions());
+    const result = await runner.run();
+
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      expect(result.error.message).toContain('exited with code 1');
+      // The diagnostic context surfaces what the agent emitted before dying.
+      expect(result.error.message).toContain('rate_limit_event');
+      expect(result.error.message).toContain('error_during_execution');
+      expect(result.error.message).toContain('Usage limit reached');
+    }
+  });
+
   it('run: returns cancelled result when aborted', async () => {
     const abortController = new AbortController();
     abortController.abort();

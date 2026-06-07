@@ -195,6 +195,13 @@ export class AgentRunner {
       this.sessionLog?.error({ stderr: data }, 'Agent stderr');
     };
 
+    // Ring buffer of recent stream messages. When the CLI exits non-zero it
+    // often writes nothing to stderr — its diagnostic arrives on stdout as a
+    // message we'd otherwise discard. Keep the tail so the thrown error carries
+    // the context that preceded the crash.
+    const recentMessages: string[] = [];
+    const RECENT_LIMIT = 12;
+
     let q: any;
     try {
       q = query({ prompt, options: queryOptions as any });
@@ -204,6 +211,9 @@ export class AgentRunner {
 
     try {
       for await (const msg of q) {
+        recentMessages.push(summarizeMessage(msg));
+        if (recentMessages.length > RECENT_LIMIT) recentMessages.shift();
+
         // Track events
         if ('type' in msg) {
           this.options.onEvent?.(this.options.issue.id, msg.type, JSON.stringify(msg).slice(0, 200));
@@ -256,9 +266,14 @@ export class AgentRunner {
         }
       }
     } catch (streamErr: any) {
-      const detail = stderrBuffer.trim()
-        ? ` | agent stderr: ${stderrBuffer.trim().slice(-2000)}`
-        : '';
+      const parts: string[] = [];
+      if (stderrBuffer.trim()) {
+        parts.push(`agent stderr: ${stderrBuffer.trim().slice(-2000)}`);
+      }
+      if (recentMessages.length > 0) {
+        parts.push(`recent stream messages: ${recentMessages.join(' → ')}`);
+      }
+      const detail = parts.length > 0 ? ` | ${parts.join(' | ')}` : '';
       throw new AgentError(`Agent stream error: ${streamErr.message}${detail}`);
     }
 
@@ -361,6 +376,29 @@ interface TurnResult {
   isComplete: boolean;
   usage: TokenUsage | null;
   sessionId: string | null;
+}
+
+/**
+ * Compact, single-line summary of an SDK stream message for diagnostics.
+ * Result messages carry the most useful failure detail (subtype, error flag,
+ * and any human-readable text), so they get expanded; everything else collapses
+ * to its type/subtype.
+ */
+function summarizeMessage(msg: any): string {
+  const type = msg?.type ?? 'unknown';
+  if (type === 'result') {
+    const subtype = msg.subtype ? `:${msg.subtype}` : '';
+    const errFlag = msg.is_error ? '!' : '';
+    const text = typeof msg.result === 'string'
+      ? msg.result
+      : (typeof msg.error === 'string' ? msg.error : '');
+    const snippet = text ? ` "${text.slice(0, 300)}"` : '';
+    return `result${subtype}${errFlag}${snippet}`;
+  }
+  if (type === 'system' && msg.subtype) {
+    return `system:${msg.subtype}`;
+  }
+  return String(type);
 }
 
 function mergeUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
